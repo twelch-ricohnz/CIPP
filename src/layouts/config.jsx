@@ -73,18 +73,6 @@ export const nativeMenuItems = [
             permissions: ['Identity.Role.*'],
           },
           {
-            title: 'JIT Admin Templates',
-            path: '/identity/administration/jit-admin-templates',
-            permissions: ['Identity.Role.*'],
-            scope: 'global',
-          },
-          {
-            title: 'JIT Role Templates',
-            path: '/identity/administration/jit-role-templates',
-            permissions: ['Identity.Role.*'],
-            scope: 'global',
-          },
-          {
             title: 'Vacation Mode',
             path: '/identity/administration/vacation-mode',
             permissions: ['Identity.User.*'],
@@ -210,6 +198,13 @@ export const nativeMenuItems = [
             title: 'Domains',
             path: '/tenant/administration/domains',
             permissions: ['Tenant.Administration.*'],
+          },
+          {
+            title: "Service Health",
+            path: "/tenant/administration/service-health",
+            permissions: ["Tenant.Administration.*"],
+            // No docs page yet; the help link lands on the section until one is written.
+            docsPath: "tenant/administration",
           },
         ],
       },
@@ -744,16 +739,6 @@ export const nativeMenuItems = [
         permissions: ['Sharepoint.Admin.*'],
       },
       {
-        title: 'Sharing Report',
-        path: '/teams-share/sharing-report',
-        permissions: ['Sharepoint.Site.*'],
-      },
-      {
-        title: 'Permissions Report',
-        path: '/teams-share/permissions-report',
-        permissions: ['Sharepoint.Site.*'],
-      },
-      {
         title: 'External Users',
         path: '/teams-share/external-users',
         permissions: ['Sharepoint.Site.*'],
@@ -768,14 +753,33 @@ export const nativeMenuItems = [
             permissions: ['Teams.Group.*'],
           },
           {
-            title: 'Teams Activity',
-            path: '/teams-share/teams/teams-activity',
-            permissions: ['Teams.Activity.*'],
-          },
-          {
             title: 'Business Voice',
             path: '/teams-share/teams/business-voice',
             permissions: ['Teams.Voice.*'],
+          },
+        ],
+      },
+      {
+        title: 'Reports',
+        permissions: ['Sharepoint.Site.*', 'Teams.Activity.*'],
+        items: [
+          {
+            title: 'Sharing Report',
+            path: '/teams-share/reports/sharing-report',
+            docsPath: 'teams-share/sharing-report',
+            permissions: ['Sharepoint.Site.*'],
+          },
+          {
+            title: 'Permissions Report',
+            path: '/teams-share/reports/permissions-report',
+            docsPath: 'teams-share/permissions-report',
+            permissions: ['Sharepoint.Site.*'],
+          },
+          {
+            title: 'Teams Activity',
+            path: '/teams-share/reports/teams-activity',
+            docsPath: 'teams-share/teams/teams-activity',
+            permissions: ['Teams.Activity.*'],
           },
         ],
       },

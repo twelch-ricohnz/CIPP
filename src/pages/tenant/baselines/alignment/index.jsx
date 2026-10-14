@@ -27,7 +27,7 @@ import {
   TimelineSeparator,
 } from '@mui/lab'
 import { Grid } from '@mui/system'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { Layout as DashboardLayout } from '../../../../layouts/index'
 import { TabbedLayout } from '../../../../layouts/TabbedLayout'
@@ -67,6 +67,8 @@ const deviationColors = {
   'Partially Accepted': 'warning',
   Drift: 'error',
   Conflict: 'error',
+  // Set when the remediation write itself failed - not tenant drift, so no diff to show.
+  Error: 'error',
   'Denied - Remediate Pending': 'warning',
   'Denied - Delete Pending': 'warning',
   'Skipped - No License': 'default',
@@ -479,6 +481,12 @@ const Page = () => {
   const router = useRouter()
   const currentTenant = useSettings().currentTenant
   const [viewMode, setViewMode] = useState('tenant')
+  // Deep link: ?view=standard opens the by-standard view (query is empty until the router is ready).
+  useEffect(() => {
+    if (router.isReady && router.query.view === 'standard') setViewMode('standard')
+  }, [router.isReady, router.query.view])
+  const [baselineIdPick, setBaselineIdPick] = useState(undefined)
+  const [stagePick, setStagePick] = useState(undefined)
   const [advanceTarget, setAdvanceTarget] = useState(null)
   const advanceDialog = useDialog()
   const [triageTarget, setTriageTarget] = useState(null)
@@ -560,10 +568,21 @@ const Page = () => {
     queryKey: `ListBaselineAlignment-${currentTenant}`,
     waiting: isTenantView && !!currentTenant,
   })
+  // Same filter/queryKey scheme as the Fleet Overview so both pages share cache entries.
+  // router.query is empty on the first render, so URL values are the fallback until the user picks.
+  const baselineId =
+    baselineIdPick !== undefined ? baselineIdPick : router.query.baselineId || null
+  const stage =
+    stagePick !== undefined ? stagePick : Number(router.query.stage) || null
   const aggregateApi = ApiGetCall({
     url: '/api/ListBaselineAlignment',
-    data: { byStandard: true },
-    queryKey: 'ListBaselineAlignment-byStandard',
+    data: {
+      byStandard: true,
+      ...(baselineId ? { baselineId, ...(stage ? { stage } : {}) } : {}),
+    },
+    queryKey: baselineId
+      ? `ListBaselineAlignment-byStandard-${baselineId}${stage ? `-${stage}` : ''}`
+      : 'ListBaselineAlignment-byStandard',
     waiting: viewMode === 'standard',
   })
   const historyApi = ApiGetCall({
@@ -590,6 +609,31 @@ const Page = () => {
     !!catalog.find((entry) => entry.name === `${standardName}`.split('#')[0])
       ?.delete
   const baselines = baselinesApi.data ?? []
+  const baselineList = Array.isArray(baselines) ? baselines : [baselines]
+  const baselineOptions = [
+    { label: 'All baselines', value: 'all' },
+    ...baselineList.map((baseline) => ({
+      label: baseline.templateName,
+      value: baseline.GUID,
+    })),
+  ]
+  const selectedBaseline = baselineList.find(
+    (baseline) => baseline.GUID === baselineId
+  )
+  // Stages are identified by their 1-based position.
+  const selectedStages = selectedBaseline?.stages
+  const stageOptions = [
+    { label: 'All stages', value: 'all' },
+    ...(Array.isArray(selectedStages)
+      ? selectedStages
+      : selectedStages
+        ? [selectedStages]
+        : []
+    ).map((stageDef, index) => ({
+      label: stageDef?.name || `Stage ${index + 1}`,
+      value: index + 1,
+    })),
+  ]
   const standardAggregates = aggregateApi.data?.standards ?? []
   const tenant = {
     displayName: currentTenant,
@@ -1006,9 +1050,35 @@ const Page = () => {
         { label: 'Configured By', value: row.sourceTemplate },
         {
           label: 'Last Run',
-          value: row.lastRun
-            ? parseCippDate(row.lastRun).toLocaleString()
-            : 'N/A',
+          // The newest run's logs are one click away at the top of the drawer; the
+          // per-run buttons further down cover older runs. history is newest-first.
+          value: row.lastRun ? (
+            <Stack
+              component="span"
+              direction="row"
+              spacing={1}
+              sx={{ alignItems: 'center', justifyContent: 'flex-end' }}
+            >
+              <span>{parseCippDate(row.lastRun).toLocaleString()}</span>
+              {row.history?.[0]?.runId && (
+                <CippApiLogsDrawer
+                  baselineRunFilter={row.history[0].runId}
+                  tenantFilter={currentTenant}
+                  buttonText="View Logs"
+                  title={`Run ${String(row.history[0].runId).slice(0, 8)} - Logs`}
+                  size="small"
+                  sx={{
+                    fontSize: '0.75rem',
+                    p: 0,
+                    minWidth: 0,
+                    textTransform: 'none',
+                  }}
+                />
+              )}
+            </Stack>
+          ) : (
+            'N/A'
+          ),
         },
       ]
       if (row.deviationReason) {
@@ -1658,12 +1728,27 @@ const Page = () => {
                   <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                     {parseCippDate(run.timestamp).toLocaleString()}
                   </Typography>
-                  <Chip
-                    variant="outlined"
-                    size="small"
-                    label={outcomeTimeline[run.outcome]?.label ?? run.outcome}
-                    color={outcomeTimeline[run.outcome]?.chipColor ?? 'error'}
-                  />
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                    <CippApiLogsDrawer
+                      baselineRunFilter={run.runId}
+                      tenantFilter={currentTenant}
+                      buttonText="View Logs"
+                      title={`Run ${String(run.runId).slice(0, 8)} - Logs`}
+                      size="small"
+                      sx={{
+                        fontSize: '0.75rem',
+                        p: 0,
+                        minWidth: 0,
+                        textTransform: 'none',
+                      }}
+                    />
+                    <Chip
+                      variant="outlined"
+                      size="small"
+                      label={outcomeTimeline[run.outcome]?.label ?? run.outcome}
+                      color={outcomeTimeline[run.outcome]?.chipColor ?? 'error'}
+                    />
+                  </Stack>
                 </Stack>
                 <Typography
                   variant="caption"
@@ -2025,6 +2110,25 @@ const Page = () => {
                         Move to Next Stage
                       </Button>
                     )}
+                    {state.nextStage && !state.manualAdvance && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<CippIcons.Refresh />}
+                        onClick={() => {
+                          setAdvanceTarget({
+                            action: 'evaluate',
+                            tenantFilter: state.tenantFilter,
+                            templateId: row.GUID,
+                            templateName: row.templateName,
+                            nextStageName: state.nextStageName,
+                          })
+                          advanceDialog.handleOpen()
+                        }}
+                      >
+                        Re-evaluate Stage
+                      </Button>
+                    )}
                   </Stack>
                 </Stack>
                 {state.nextStage ? (
@@ -2296,6 +2400,33 @@ const Page = () => {
                     </Stack>
                   </>
                 )}
+                {state.nextStage && !state.manualAdvance && (
+                  <>
+                    <Box sx={{ flexGrow: 1 }} />
+                    <Divider sx={{ my: 1 }} />
+                    <Stack direction="row" sx={{
+                      justifyContent: "flex-end"
+                    }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<CippIcons.Refresh />}
+                        onClick={() => {
+                          setAdvanceTarget({
+                            action: 'evaluate',
+                            tenantFilter: tenant.tenantId,
+                            templateId: state.templateId,
+                            templateName: state.templateName,
+                            nextStageName: state.nextStageName,
+                          })
+                          advanceDialog.handleOpen()
+                        }}
+                      >
+                        Re-evaluate stage conditions
+                      </Button>
+                    </Stack>
+                  </>
+                )}
               </Box>
             </Grid>
           ))}
@@ -2346,17 +2477,26 @@ const Page = () => {
       {advanceTarget && (
         <CippApiDialog
           createDialog={advanceDialog}
-          title="Move to Next Stage"
+          title={
+            advanceTarget.action === 'evaluate'
+              ? 'Re-evaluate Stage'
+              : 'Move to Next Stage'
+          }
           api={{
             url: '/api/ExecBaselineStage',
             type: 'POST',
             data: {
-              action: '!advanceStage',
+              action:
+                advanceTarget.action === 'evaluate'
+                  ? '!evaluate'
+                  : '!advanceStage',
               tenantFilter: 'tenantFilter',
               templateId: 'templateId',
             },
             confirmText:
-              'Move [tenantFilter] into stage [nextStageName] of [templateName]? The tenant receives all standards from that stage on the next run.',
+              advanceTarget.action === 'evaluate'
+                ? 'Check now whether [tenantFilter] meets the conditions for stage [nextStageName] of [templateName]? If they are met it moves there and receives the standards of that stage on the next run.'
+                : 'Move [tenantFilter] into stage [nextStageName] of [templateName]? The tenant receives all standards from that stage on the next run.',
             relatedQueryKeys,
           }}
           row={advanceTarget}
@@ -3208,6 +3348,62 @@ const Page = () => {
             }}>
             {modeToggle}
           </Stack>
+          {viewMode === 'standard' && (
+            <>
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                  <CippAutoComplete
+                    fullWidth
+                    multiple={false}
+                    creatable={false}
+                    label="Baseline"
+                    options={baselineOptions}
+                    value={
+                      baselineOptions.find(
+                        (option) => option.value === baselineId
+                      ) ?? baselineOptions[0]
+                    }
+                    onChange={(newValue) => {
+                      setBaselineIdPick(
+                        newValue?.value && newValue.value !== 'all'
+                          ? newValue.value
+                          : null
+                      )
+                      setStagePick(null)
+                    }}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+                  <CippAutoComplete
+                    fullWidth
+                    multiple={false}
+                    creatable={false}
+                    label="Stage"
+                    disabled={!baselineId}
+                    options={stageOptions}
+                    value={
+                      stageOptions.find((option) => option.value === stage) ??
+                      stageOptions[0]
+                    }
+                    onChange={(newValue) =>
+                      setStagePick(
+                        newValue?.value && newValue.value !== 'all'
+                          ? newValue.value
+                          : null
+                      )
+                    }
+                  />
+                </Grid>
+              </Grid>
+              {baselineId && (
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  Standards shared with another baseline are scored once per
+                  tenant, so they count toward every baseline that includes
+                  them.
+                </Typography>
+              )}
+            </>
+          )}
           {dialogs}
         </Stack>
       }
